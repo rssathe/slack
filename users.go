@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/url"
 	"strconv"
+	"strings"
 )
 
 const (
@@ -181,6 +182,17 @@ type UserSetPhotoParams struct {
 	CropW int
 }
 
+type GetUserConversationParams struct {
+	GetConversationsParameters
+	UserID string
+}
+
+type GetUserConversationsRes struct {
+	Channels         []*Channel       `json:"channels"`
+	ResponseMetaData responseMetaData `json:"response_metadata"`
+	SlackResponse
+}
+
 func NewUserSetPhotoParams() UserSetPhotoParams {
 	return UserSetPhotoParams{
 		CropX: DEFAULT_USER_PHOTO_CROP_X,
@@ -199,6 +211,40 @@ func userRequest(ctx context.Context, client HTTPRequester, path string, values 
 		return nil, errors.New(response.Error)
 	}
 	return response, nil
+}
+
+func (api *Client) GetUserConversations(
+	params *GetUserConversationParams,
+) ([]*Channel, string, error) {
+	return api.GetUserConversationsContext(context.Background(), params)
+}
+
+func (api *Client) GetUserConversationsContext(
+	ctx context.Context,
+	params *GetUserConversationParams,
+) ([]*Channel, string, error) {
+	values := url.Values{
+		"token":            {api.token},
+		"exclude_archived": {params.ExcludeArchived},
+	}
+	if params.Cursor != "" {
+		values.Add("cursor", params.Cursor)
+	}
+	if params.Limit != 0 {
+		values.Add("limit", strconv.Itoa(params.Limit))
+	}
+	if params.Types != nil {
+		values.Add("types", strings.Join(params.Types, ","))
+	}
+	if params.UserID != "" {
+		values.Add("user", params.UserID)
+	}
+	var response GetUserConversationsRes
+	err := postSlackMethod(ctx, api.httpclient, "users.conversations", values, &response, api.debug)
+	if err != nil {
+		return nil, "", err
+	}
+	return response.Channels, response.ResponseMetaData.NextCursor, response.Err()
 }
 
 // GetUserPresence will retrieve the current presence status of given user.
